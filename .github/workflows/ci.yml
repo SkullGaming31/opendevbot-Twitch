@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })' || exit 1"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        env:
+          # Ensure DB auto-connect picks up this URI
+          MONGO_URI: mongodb://localhost:27017/opendevbot_test
+          ENVIRONMENT: ci
+          # Provide dummy Twitch creds for tests that expect them
+          TWITCH_CLIENT_ID: test
+          TWITCH_CLIENT_SECRET: test
+        run: npm run test:coverage
