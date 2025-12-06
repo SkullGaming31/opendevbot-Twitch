@@ -33,9 +33,10 @@ jobs:
       - name: Run tests
         env:
           # Ensure DB auto-connect picks up this URI
-          MONGO_URI: mongodb://localhost:27017/opendevbot_test
+          MONGO_URI: ${{ secrets.MONGO_URI }}
           ENVIRONMENT: ci
-          # Provide dummy Twitch creds for tests that expect them
-          TWITCH_CLIENT_ID: test
-          TWITCH_CLIENT_SECRET: test
+          # Use repository secrets for client creds (repo uses CLIENT_ID/CLIENT_SECRET)
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          EVENTSUB_SECRET: ${{ secrets.EVENTSUB_SECRET }}
         run: npm run test
