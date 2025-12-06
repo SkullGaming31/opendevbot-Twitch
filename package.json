@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "description": "OpenDevBot Twitch Chatbot from scratch using Twitch API, EventSub, and OAuth2",
   "main": "dist/index.js",
+  "keywords": [],
+  "author": "SkullGaming31",
+  "license": "MIT",
   "scripts": {
     "start": "node .",
     "dev": "nodemon --watch \"src/**/*.ts\" --exec \"npx ts-node --files src/index.ts\"",
@@ -11,9 +14,6 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "SkullGaming31",
-  "license": "MIT",
   "dependencies": {
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
