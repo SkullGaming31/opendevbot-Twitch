@@ -1,29 +1,14 @@
 
 # opendevbot-twitch
 
-[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/skullgaming31/opendevbot-Twitch/actions/workflows/ci.yml)
-
-Lightweight Twitch integration helpers (OAuth + EventSub scaffolding) used for development and testing.
-
-Note: replace `<owner>/<repo>` in the badge URL above with your repository owner and name to enable the Actions badge.
-
-## Quickstart
-
-- Install dependencies:
-
-```pwsh
-# opendevbot-twitch
+### A Twitch bot and EventSub manager for multi-channel hosting done from scratch.
 
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
-[![CI](https://github.com/skullgaminghq/opendevbot-Twitch/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/skullgaminghq/opendevbot-Twitch/actions/workflows/ci.yml)
-
-Lightweight Twitch integration helpers (OAuth + EventSub scaffolding) used for development and testing.
-
-> Note: replace `<owner>/<repo>` in the badge URLs below with your repository owner and name to enable the Actions badge and shields.
+[![CI](https://github.com/skullgaming31/opendevbot-Twitch/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/skullgaming31/opendevbot-Twitch/actions/workflows/ci.yml)
 
 ## Quickstart
 
