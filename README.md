@@ -1,7 +1,7 @@
 
 # opendevbot-twitch
 
-[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml)
+[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/skullgaming31/opendevbot-Twitch/actions/workflows/ci.yml)
 
 Lightweight Twitch integration helpers (OAuth + EventSub scaffolding) used for development and testing.
 
@@ -19,7 +19,7 @@ Note: replace `<owner>/<repo>` in the badge URL above with your repository owner
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
-[![CI](https://github.com/skullgaminghq/<repo>/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/skullgaminghq/<repo>/actions/workflows/ci.yml)
+[![CI](https://github.com/skullgaminghq/opendevbot-Twitch/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/skullgaminghq/opendevbot-Twitch/actions/workflows/ci.yml)
 
 Lightweight Twitch integration helpers (OAuth + EventSub scaffolding) used for development and testing.
 
@@ -63,13 +63,13 @@ This repository includes a GitHub Actions workflow at `.github/workflows/ci.yml`
 ---
 
 <!-- Badge reference links - replace OWNER/REPO with your GitHub repository -->
-[contributors-shield]: https://img.shields.io/github/contributors/OWNER/REPO.svg?style=for-the-badge
-[contributors-url]: https://github.com/OWNER/REPO/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/OWNER/REPO.svg?style=for-the-badge
-[forks-url]: https://github.com/OWNER/REPO/network/members
-[stars-shield]: https://img.shields.io/github/stars/OWNER/REPO.svg?style=for-the-badge
-[stars-url]: https://github.com/OWNER/REPO/stargazers
-[issues-shield]: https://img.shields.io/github/issues/OWNER/REPO.svg?style=for-the-badge
-[issues-url]: https://github.com/OWNER/REPO/issues
-[license-shield]: https://img.shields.io/github/license/OWNER/REPO.svg?style=for-the-badge
-[license-url]: https://github.com/OWNER/REPO/blob/main/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/skullgaming31/opendevbot-Twitch.svg?style=for-the-badge
+[contributors-url]: https://github.com/skullgaming31/opendevbot-Twitch/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/skullgaming31/opendevbot-Twitch.svg?style=for-the-badge
+[forks-url]: https://github.com/skullgaming31/opendevbot-Twitch/network/members
+[stars-shield]: https://img.shields.io/github/stars/skullgaming31/opendevbot-Twitch.svg?style=for-the-badge
+[stars-url]: https://github.com/skullgaming31/opendevbot-Twitch/stargazers
+[issues-shield]: https://img.shields.io/github/issues/skullgaming31/opendevbot-Twitch.svg?style=for-the-badge
+[issues-url]: https://github.com/skullgaming31/opendevbot-Twitch/issues
+[license-shield]: https://img.shields.io/github/license/skullgaming31/opendevbot-Twitch.svg?style=for-the-badge
+[license-url]: https://github.com/skullgaming31/opendevbot-Twitch/blob/main/LICENSE
