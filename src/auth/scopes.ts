@@ -125,6 +125,13 @@ export const MODERATION_SCOPES: ScopeValue[] = [
   SCOPES.MODERATOR_MANAGE_WARNINGS,
 ];
 
+// All scopes convenience array (runtime-generated from SCOPES constants).
+export const ALL_SCOPES: ScopeValue[] = Object.values(SCOPES) as ScopeValue[];
+
+// Bot scopes: all scopes except `channel:bot` — the bot should request everything
+// except the channel:bot scope, per current requirements.
+export const BOT_SCOPES: ScopeValue[] = ALL_SCOPES.filter((s) => s !== SCOPES.CHANNEL_BOT);
+
 /**
  * Join an array of scopes and URL-encode the result for use in the authorize URL.
  */

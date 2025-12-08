@@ -1,8 +1,10 @@
 import dotenv from 'dotenv';
-dotenv.config();
+// Disable dotenv debug output which prints informational lines to stdout
+dotenv.config({ debug: false, quiet: true });
 
 import mongoose from 'mongoose';
 import { TokenModel, IToken, TokenInput, TokenAttrs } from './models/token';
+import logger from '../logger';
 
 let cached = globalThis as any;
 if (!cached._mongoose) {
@@ -66,20 +68,20 @@ if (autoUri) {
       return 'REDACTED';
     }
   };
-  console.log(`Using MongoDB URI from ${chosenSource}: ${redacted(autoUri)}`);
+  // logger.info({ uri: redacted(autoUri), source: chosenSource }, 'Using MongoDB URI');
 
   dbReady = connectDB(autoUri)
     .then((conn) => {
-      console.log('MongoDB connected (auto)');
+      logger.info('MongoDB connected (auto)');
       return conn;
     })
     .catch((err) => {
-      console.error('MongoDB auto-connect failed:', err?.message || err);
+      logger.error({ err: err?.message || String(err) }, 'MongoDB auto-connect failed');
       throw err;
     });
 } else {
   dbReady = Promise.resolve(null);
-  console.warn('MongoDB URI not set — MongoDB will not auto-connect. Set MONGO_URI or MONGODB_URI or DOCKER_URI.');
+  logger.warn('MongoDB URI not set — MongoDB will not auto-connect. Set MONGO_URI or MONGODB_URI or DOCKER_URI.');
 }
 
 export { dbReady };

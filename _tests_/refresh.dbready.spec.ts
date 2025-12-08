@@ -1,28 +1,33 @@
-import { describe, it, expect, vi } from 'vitest';
 
-// Simulate dbReady rejecting to ensure startRefreshWorker logs the db-not-ready message
-vi.resetModules();
-vi.doMock('../src/Database', () => ({ dbReady: Promise.reject(new Error('boom from db')) }));
+      import { describe, it, expect, vi } from 'vitest';
+      import logger from '../src/logger';
 
-describe('refresh start when dbReady rejects', () => {
-  it('logs db-not-ready error', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.resetModules();
 
-    const { startRefreshWorker, stopRefreshWorker } = await import('../src/auth/refresh');
-    startRefreshWorker();
+        let rejectDbReady: (err?: any) => void;
+        const dbReady = new Promise((_res, rej) => { rejectDbReady = rej!; });
+        vi.doMock('../src/Database', () => ({ dbReady }));
 
-    // Allow promise microtasks to run
-    await new Promise((r) => setTimeout(r, 10));
+        describe('refresh start when dbReady rejects', () => {
+          it('logs db-not-ready error', async () => {
+            const logger = (await import('../src/logger')).default;
+            const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
 
-    expect(errorSpy).toHaveBeenCalled();
-    // The first argument should include our identifying message
-    const firstCallArg = errorSpy.mock.calls[0][0] as string;
-    expect(String(firstCallArg)).toContain('[refresh] db not ready');
+              const { startRefreshWorker, stopRefreshWorker } = await import('../src/auth/refresh');
+            startRefreshWorker();
 
-    // cleanup: ensure the worker state is reset
-    try {
-      stopRefreshWorker();
-    } catch {}
-    errorSpy.mockRestore();
-  });
-});
+            // Trigger the rejection while the worker is active and allow a tick
+            // for handlers to process it.
+            rejectDbReady(new Error('boom from db'));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(errorSpy).toHaveBeenCalled();
+            const found = errorSpy.mock.calls.some((c) => Array.from(c).some((a) => String(a).includes('[refresh] db not ready')));
+            expect(found).toBe(true);
+
+            try {
+              stopRefreshWorker();
+            } catch {}
+            errorSpy.mockRestore();
+          });
+        });

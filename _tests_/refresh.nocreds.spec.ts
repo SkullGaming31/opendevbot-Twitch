@@ -22,7 +22,8 @@ vi.doMock('../src/Database', () => ({ dbReady: Promise.resolve(null) }));
 
 describe('refresh with missing creds', () => {
   it('does not call auth and increments retry_count', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const logger = (await import('../src/logger')).default;
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const { refreshOnce } = await import('../src/auth/refresh');
     await refreshOnce({ lookAheadMs: 1000, batchSize: 1, maxRetries: 2 });
 

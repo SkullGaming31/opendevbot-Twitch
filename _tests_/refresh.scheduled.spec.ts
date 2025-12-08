@@ -17,13 +17,14 @@ vi.doMock('../src/auth/API', () => ({ authURL: { post: vi.fn() } }));
 
 describe('scheduled run failure', () => {
   it('logs scheduled run failure after initial success', async () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logger = (await import('../src/logger')).default;
+    const errSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
     const { startRefreshWorker, stopRefreshWorker } = await import('../src/auth/refresh');
 
     startRefreshWorker({ intervalMs: 20 });
     await new Promise((r) => setTimeout(r, 80));
 
-    const found = errSpy.mock.calls.some((c) => String(c[0]).includes('[refresh] scheduled run failed'));
+    const found = errSpy.mock.calls.some((c) => Array.from(c).some((a) => String(a).includes('[refresh] scheduled run failed')));
     expect(found).toBe(true);
 
     stopRefreshWorker();

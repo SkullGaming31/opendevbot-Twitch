@@ -12,6 +12,10 @@ export interface TokenAttrs {
   retry_count?: number;
   // When true, the token will be skipped by refresh worker
   disabled?: boolean;
+  // When true, the token is being processed by a refresh worker
+  processing?: boolean;
+  // Timestamp indicating when processing started (used to detect stale locks)
+  processing_at?: Date | string;
 }
 
 export interface IToken extends Document {
@@ -23,6 +27,8 @@ export interface IToken extends Document {
   obtained_at?: Date;
   retry_count?: number;
   disabled?: boolean;
+  processing?: boolean;
+  processing_at?: Date;
 }
 
 const TokenSchema = new Schema<IToken>({
@@ -36,6 +42,9 @@ const TokenSchema = new Schema<IToken>({
   obtained_at: { type: Date },
   retry_count: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
+  // In-flight lock to prevent concurrent refresh attempts on the same token
+  processing: { type: Boolean, default: false },
+  processing_at: { type: Date },
 });
 
 // Avoid model overwrite errors when tests reset modules: reuse existing model if present.

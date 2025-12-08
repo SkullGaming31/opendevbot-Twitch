@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import logger from '../src/logger';
 
 // Ensure creds so refresh worker logic runs (even though authURL will be mocked)
 process.env.TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID ?? 't';
@@ -28,8 +29,9 @@ const startStop = async (postImpl: any, tokens: any[]) => {
   }));
 
   const refresher = await import('../src/auth/refresh');
-  // Spy on console.warn to capture error logs
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  // Import logger after mocks and spy on its warn method
+  const logger = (await import('../src/logger')).default;
+  const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
   refresher.startRefreshWorker({ intervalMs: 100, lookAheadMs: 1000, batchSize: 10 });
   await new Promise((r) => setTimeout(r, 200));
   refresher.stopRefreshWorker();

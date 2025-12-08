@@ -11,7 +11,8 @@ vi.doMock('../src/Database/models/token', () => ({ TokenModel: { find: findMock 
 
 describe('startRefreshWorker initial/scheduled failure paths', () => {
   it('logs initial run failure when processBatch rejects', async () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logger = (await import('../src/logger')).default;
+    const errSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
     const { startRefreshWorker, stopRefreshWorker } = await import('../src/auth/refresh');
 
     startRefreshWorker({ intervalMs: 10 });
@@ -19,7 +20,7 @@ describe('startRefreshWorker initial/scheduled failure paths', () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(errSpy).toHaveBeenCalled();
-    const found = errSpy.mock.calls.some((c) => String(c[0]).includes('[refresh] initial run failed'));
+    const found = errSpy.mock.calls.some((c) => Array.from(c).some((a) => String(a).includes('[refresh] initial run failed')));
     expect(found).toBe(true);
 
     // cleanup

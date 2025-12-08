@@ -28,7 +28,8 @@ vi.doMock('../src/Database', () => ({ dbReady: Promise.resolve(null) }));
 
 describe('refresh inner error', () => {
   it('logs inner error when retry increment fails', async () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logger = (await import('../src/logger')).default;
+    const errSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
     const { refreshOnce } = await import('../src/auth/refresh');
     await refreshOnce({ lookAheadMs: 1000, batchSize: 1, maxRetries: 2 });
     expect(postMock).toHaveBeenCalled();

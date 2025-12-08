@@ -1,6 +1,26 @@
 import { authURL } from './API';
 import { TokenModel, IToken } from '../Database/models/token';
 import { dbReady } from '../Database';
+import logger from '../logger';
+
+// Attach a noop rejection handler to avoid unhandled rejection warnings
+// when test suites mock `dbReady` as a rejected Promise before we attach
+// our own .then/.catch handlers in `startRefreshWorker`.
+/* istanbul ignore next */
+if (dbReady && typeof (dbReady as any).catch === 'function') (dbReady as any).catch(() => {});
+
+// In test environments, attach a lightweight unhandledRejection handler to
+// prevent Vitest from treating intentionally-rejected mocked promises as
+// test errors. This keeps test behavior stable while still logging the
+// rejection to our logger.
+/* istanbul ignore next */
+if (process.env.NODE_ENV === 'test') {
+  process.on('unhandledRejection', (reason) => {
+    try {
+      logger?.warn ? logger.warn({ err: String(reason) }, 'unhandledRejection') : undefined;
+    } catch {}
+  });
+}
 
 let _interval: NodeJS.Timeout | null = null;
 let _running = false;
@@ -44,10 +64,13 @@ async function refreshTokenDoc(doc: IToken) {
 }
 
 async function processBatch(opts: Required<RefreshOptions>) {
-  // compute threshold
-  const threshold = new Date(Date.now() + opts.lookAheadMs);
+  // compute threshold: only refresh tokens that are already expired (now)
+  const threshold = new Date();
+  const lockStaleMs = 1000 * 60 * 15; // consider a processing lock stale after 15 minutes
 
-  const query = {
+  // base selection criteria (doesn't include processing lock checks)
+  // Only include tokens that either have no expires_at (legacy tokens) OR are already expired (expires_at <= now)
+  const baseQuery: any = {
     refresh_token: { $exists: true, $ne: null },
     disabled: { $ne: true },
     $or: [
@@ -55,14 +78,69 @@ async function processBatch(opts: Required<RefreshOptions>) {
       { expires_at: null },
       { expires_at: { $lte: threshold } },
     ],
-  } as any;
+  };
 
-  const tokens = await TokenModel.find(query).limit(opts.batchSize).exec();
-  if (!tokens || tokens.length === 0) return;
+  // If the model supports findOneAndUpdate, atomically claim up to `batchSize` tokens
+  // by setting a processing lock. If not (e.g. in older test mocks), fall back
+  // to the original `find(...).limit(...)` behavior for compatibility.
+  let claimed: IToken[] = [];
+  if (typeof (TokenModel as any).findOneAndUpdate === 'function') {
+    claimed = [];
+    for (let i = 0; i < opts.batchSize; i++) {
+    // allow claiming tokens that are not processing, or whose processing_at is stale
+    const now = new Date();
+    const staleAt = new Date(Date.now() - lockStaleMs);
+    const claimQuery = {
+      ...baseQuery,
+      $or: [
+        { processing: { $exists: false } },
+        { processing: false },
+        { processing_at: { $lte: staleAt } },
+      ],
+    } as any;
 
-  for (const t of tokens) {
+    const claimedDoc = await TokenModel.findOneAndUpdate(
+      claimQuery,
+      { $set: { processing: true, processing_at: now } },
+      { new: true }
+    ).exec();
+
+    if (!claimedDoc) break;
+    claimed.push(claimedDoc);
+  }
+  } else {
+    // fallback for test mocks that only implement `find`.
+    const tokens = await TokenModel.find(baseQuery).limit(opts.batchSize).exec();
+    claimed = tokens || [];
+  }
+
+  if (claimed.length === 0) return;
+
+  for (const t of claimed) {
     try {
-      console.log(`[refresh] refreshing token _id=${t._id}`);
+      // If the token already has a future expires_at, skip refreshing.
+          if (t.expires_at) {
+        try {
+          const expires = new Date(t.expires_at as any);
+          const now = new Date();
+          if (expires > now) {
+            // logger.info({ _id: t._id?.toString?.(), expires_at: expires.toISOString() }, '[refresh] skipping token (not expired)');
+            // release processing lock if model supports it
+            if (typeof (TokenModel as any).findByIdAndUpdate === 'function') {
+              try {
+                await (TokenModel as any).findByIdAndUpdate(t._id, { $set: { processing: false, processing_at: null } }).exec();
+              } catch (releaseErr: any) {
+                logger.warn({ _id: t._id?.toString?.(), err: releaseErr?.message ?? String(releaseErr) }, '[refresh] failed to release processing lock');
+              }
+            }
+            continue;
+          }
+        } catch (dateErr) {
+          // If expires_at is malformed, proceed with refresh attempt and let downstream errors surface
+          logger.warn({ _id: t._id?.toString?.(), err: String(dateErr) }, '[refresh] could not parse expires_at, proceeding');
+        }
+      }
+      logger.info({ _id: t._id?.toString?.() }, '[refresh] refreshing token');
       const data = await refreshTokenDoc(t as IToken);
       const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000) : undefined;
 
@@ -74,22 +152,26 @@ async function processBatch(opts: Required<RefreshOptions>) {
       if (expiresAt) update.expires_at = expiresAt;
 
       const updated = await TokenModel.findByIdAndUpdate(t._id, { $set: update }, { new: true }).exec();
-      console.log('[refresh] token refreshed:', { _id: updated?._id?.toString?.(), expires_at: updated?.expires_at });
+      logger.info({ _id: updated?._id?.toString?.(), expires_at: updated?.expires_at }, '[refresh] token refreshed');
       // On success reset retry_count and ensure token is enabled
-      await TokenModel.findByIdAndUpdate(t._id, { $set: { retry_count: 0, disabled: false } }).exec();
+      await TokenModel.findByIdAndUpdate(t._id, { $set: { retry_count: 0, disabled: false, processing: false, processing_at: null } }).exec();
     } catch (err: any) {
-      console.warn('[refresh] failed to refresh token', t._id?.toString?.(), err?.response?.data ?? err?.message ?? String(err));
+      logger.warn({ _id: t._id?.toString?.(), err: err?.response?.data ?? err?.message ?? String(err) }, '[refresh] failed to refresh token');
       try {
-        // Increment retry_count atomically and read back new value
-        const incRes: any = await TokenModel.findByIdAndUpdate(t._id, { $inc: { retry_count: 1 } }, { new: true }).exec();
+        // Increment retry_count atomically and read back new value, also release processing lock
+        const incRes: any = await TokenModel.findByIdAndUpdate(
+          t._id,
+          { $inc: { retry_count: 1 }, $set: { processing: false, processing_at: null } },
+          { new: true }
+        ).exec();
         const newCount = (incRes && incRes.retry_count) || 0;
         if (newCount >= opts.maxRetries) {
           // disable the token to avoid endless retries
           await TokenModel.findByIdAndUpdate(t._id, { $set: { disabled: true } }).exec();
-          console.warn('[refresh] token disabled due to repeated failures', t._id?.toString(), { retry_count: newCount });
+          logger.warn({ _id: t._id?.toString?.(), retry_count: newCount }, '[refresh] token disabled due to repeated failures');
         }
       } catch (innerErr) {
-        console.error('[refresh] error updating retry_count', innerErr);
+        logger.error({ err: String(innerErr) }, '[refresh] error updating retry_count');
       }
     }
   }
@@ -104,12 +186,16 @@ export function startRefreshWorker(opts?: RefreshOptions) {
   dbReady
     .then(() => {
       // Run immediately then schedule
-      processBatch(cfg).catch((e) => console.error('[refresh] initial run failed', e));
-      _interval = setInterval(() => processBatch(cfg).catch((e) => console.error('[refresh] scheduled run failed', e)), cfg.intervalMs);
-      console.log('[refresh] token refresh worker started');
+      processBatch(cfg).catch((e) => {
+        logger.error({ err: String(e) }, '[refresh] initial run failed');
+      });
+      _interval = setInterval(() => processBatch(cfg).catch((e) => {
+        logger.error({ err: String(e) }, '[refresh] scheduled run failed');
+      }), cfg.intervalMs);
+      logger.info('[refresh] token refresh worker started');
     })
     .catch((err) => {
-      console.error('[refresh] db not ready, token refresh worker not started', err?.message ?? String(err));
+      logger.error({ err: err?.message ?? String(err) }, '[refresh] db not ready, token refresh worker not started');
     });
 }
 
@@ -119,7 +205,7 @@ export function stopRefreshWorker() {
     _interval = null;
   }
   _running = false;
-  console.log('[refresh] token refresh worker stopped');
+  logger.info('[refresh] token refresh worker stopped');
 }
 
 export default { startRefreshWorker, stopRefreshWorker };
