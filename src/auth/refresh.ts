@@ -72,6 +72,15 @@ async function processBatch(opts: Required<RefreshOptions>) {
   // compute threshold: only refresh tokens that are already expired (now)
   const threshold = new Date();
   const lockStaleMs = 1000 * 60 * 15; // consider a processing lock stale after 15 minutes
+  // helper types for query/exec-like return shapes used in tests/mocks
+  type QueryWithLimit = { limit: (n: number) => { exec: () => Promise<unknown> } };
+  type QueryWithExec = { exec: () => Promise<unknown> };
+
+  // helper to resolve query builders that return { exec: fn } or promises
+  const resolveMaybe = async (v: unknown) => {
+    if (v && typeof (v as QueryWithExec).exec === 'function') return await (v as QueryWithExec).exec();
+    return v;
+  };
 
   // base selection criteria (doesn't include processing lock checks)
   // Only include tokens that either have no expires_at (legacy tokens) OR are already expired (expires_at <= now)
@@ -106,19 +115,33 @@ async function processBatch(opts: Required<RefreshOptions>) {
         ],
       };
 
-      const claimedDoc = await (maybeModel.findOneAndUpdate as (...a: unknown[]) => Promise<unknown>)(
+      const claimedDocRaw = await (maybeModel.findOneAndUpdate as (...a: unknown[]) => Promise<unknown>)(
         claimQuery,
         { $set: { processing: true, processing_at: now } },
         { new: true }
-      ) as unknown as IToken | null;
+      );
+      const claimedDoc = (await resolveMaybe(claimedDocRaw)) as unknown as IToken | null;
 
       if (!claimedDoc) break;
       claimed.push(claimedDoc);
     }
   } else {
     // fallback for test mocks that only implement `find`.
-    const res = await (maybeModel.find as (...a: unknown[]) => Promise<unknown>)(baseQuery) as unknown as IToken[];
-    const tokens = Array.isArray(res) ? res.slice(0, opts.batchSize) : [];
+    const res = await (maybeModel.find as (...a: unknown[]) => Promise<unknown>)(baseQuery) as unknown;
+    let tokens: IToken[] = [];
+    if (Array.isArray(res)) {
+      tokens = res.slice(0, opts.batchSize);
+    } else if (res && typeof (res as QueryWithLimit).limit === 'function') {
+      // some ORMs return a query builder with .limit().exec()
+      const execRes = await (res as QueryWithLimit).limit(opts.batchSize).exec();
+      tokens = Array.isArray(execRes) ? execRes : [];
+    } else if (res && typeof (res as QueryWithExec).exec === 'function') {
+      // direct exec() pattern
+      const execRes = await (res as QueryWithExec).exec();
+      tokens = Array.isArray(execRes) ? execRes.slice(0, opts.batchSize) : [];
+    } else {
+      tokens = [];
+    }
     claimed = tokens || [];
   }
 
@@ -136,7 +159,8 @@ async function processBatch(opts: Required<RefreshOptions>) {
             // release processing lock if model supports it
             if (typeof maybeModel.findByIdAndUpdate === 'function') {
               try {
-                await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { processing: false, processing_at: null } });
+                const res = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { processing: false, processing_at: null } });
+                await resolveMaybe(res);
               } catch (releaseErr) {
                 logger.warn({ _id: t._id?.toString?.(), err: (releaseErr as Error)?.message ?? String(releaseErr) }, '[refresh] failed to release processing lock');
               }
@@ -159,26 +183,40 @@ async function processBatch(opts: Required<RefreshOptions>) {
       if (data.refresh_token) update.refresh_token = data.refresh_token;
       if (expiresAt) update.expires_at = expiresAt;
 
-      const updated = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: update }, { new: true }) as unknown as IToken | null;
+      let updated: IToken | null = null;
+      if (typeof maybeModel.findByIdAndUpdate === 'function') {
+        const updatedRaw = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: update }, { new: true });
+        updated = (await resolveMaybe(updatedRaw)) as unknown as IToken | null;
+      }
       logger.info({ _id: updated?._id?.toString?.(), expires_at: updated?.expires_at }, '[refresh] token refreshed');
       // On success reset retry_count and ensure token is enabled
-      await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { retry_count: 0, disabled: false, processing: false, processing_at: null } });
+      if (typeof maybeModel.findByIdAndUpdate === 'function') {
+        const resetRaw = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { retry_count: 0, disabled: false, processing: false, processing_at: null } });
+        await resolveMaybe(resetRaw);
+      }
     } catch (err) {
       const respData = (err as { response?: { data?: unknown } })?.response?.data;
       const errMsg = respData ?? ((err as Error)?.message ?? String(err));
       logger.warn({ _id: t._id?.toString?.(), err: errMsg }, '[refresh] failed to refresh token');
       try {
         // Increment retry_count atomically and read back new value, also release processing lock
-        const incRes = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(
-          t._id,
-          { $inc: { retry_count: 1 }, $set: { processing: false, processing_at: null } },
-          { new: true }
-        ) as unknown as { retry_count?: number } | null;
-        const newCount = (incRes && incRes.retry_count) || 0;
-        if (newCount >= opts.maxRetries) {
-          // disable the token to avoid endless retries
-          await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { disabled: true } });
-          logger.warn({ _id: t._id?.toString?.(), retry_count: newCount }, '[refresh] token disabled due to repeated failures');
+        if (typeof maybeModel.findByIdAndUpdate === 'function') {
+          const incResRaw = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(
+            t._id,
+            { $inc: { retry_count: 1 }, $set: { processing: false, processing_at: null } },
+            { new: true }
+          );
+          const incRes = (await resolveMaybe(incResRaw)) as unknown as { retry_count?: number } | null;
+          const newCount = (incRes && incRes.retry_count) || 0;
+          if (newCount >= opts.maxRetries) {
+            // disable the token to avoid endless retries
+            const disRaw = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { disabled: true } });
+            await resolveMaybe(disRaw);
+            logger.warn({ _id: t._id?.toString?.(), retry_count: newCount }, '[refresh] token disabled due to repeated failures');
+          }
+        } else {
+          // If the model doesn't support findByIdAndUpdate (test mocks), we can't persist retry counts.
+          logger.warn({ _id: t._id?.toString?.() }, '[refresh] cannot update retry_count: findByIdAndUpdate missing on model');
         }
       } catch (innerErr) {
         logger.error({ err: String(innerErr) }, '[refresh] error updating retry_count');

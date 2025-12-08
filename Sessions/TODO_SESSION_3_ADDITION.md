@@ -13,3 +13,9 @@ Notes:
 
 NOTES:
 NOTES HERE
+
+Recent fixes (2025-12-08):
+- Fixed lint errors in `src/auth/refresh.ts` by replacing `any` usages with explicit helper types (`QueryWithLimit`, `QueryWithExec`) and narrowing runtime checks.
+- Consolidated `resolveMaybe` helper and guarded `findByIdAndUpdate` calls so tests and mocks without that method don't throw.
+- Allowed `.exec()` errors to propagate in fallback query handling so the worker's initial/scheduled run failures are correctly logged.
+- Re-ran `npm run lint`, `npm run typecheck`, and the test suite — all tests and lint/typecheck now pass locally.

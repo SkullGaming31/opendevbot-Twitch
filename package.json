@@ -1,6 +1,6 @@
 {
   "name": "opendevbot-twitch",
-  "version": "0.0.1",
+  "version": "0.0.9",
   "description": "OpenDevBot Twitch Chatbot from scratch using Twitch API, EventSub, and OAuth2",
   "main": "dist/index.js",
   "keywords": [],

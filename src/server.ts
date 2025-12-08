@@ -151,6 +151,10 @@ app.get(`${API_PREFIX}/auth/twitch/callback`, async (req, res) => {
 });
 
 // Start background workers (non-blocking). Worker waits for DB readiness internally.
-startRefreshWorker();
+// In test environments we avoid auto-starting background workers so test
+// suites can control startup/shutdown deterministically.
+if (process.env.NODE_ENV !== 'test') {
+  startRefreshWorker();
+}
 
 export default app;
