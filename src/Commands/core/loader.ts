@@ -12,9 +12,22 @@ export function loadCommands(commandsDir: string, logger?: LoggerLike): Map<stri
     for (const file of fs.readdirSync(commandsDir)) {
       if (!file.endsWith('.js') && !file.endsWith('.ts')) continue;
       try {
-        // require the module so it works in ts-node and node
+        // require the module so it works in node. If require fails (CI or ESM
+        // resolution differences), fall back to `jiti` which can load TS/ESM
+        // files at runtime in many environments.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require(path.join(commandsDir, file));
+        let mod: unknown;
+        try {
+          mod = require(path.join(commandsDir, file));
+        } catch (err) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const jiti = require('jiti')(process.cwd());
+            mod = jiti(path.join(commandsDir, file));
+          } catch (err2) {
+            throw err; // rethrow original require error for outer catch
+          }
+        }
         const cmd = mod && (mod.default || mod) as CommandType;
         if (!cmd || typeof cmd.name !== 'string' || typeof cmd.execute !== 'function') {
           logger?.warn?.({ file }, 'Skipping invalid chat command (missing name or execute)');
