@@ -21,13 +21,13 @@ npm install
 - Run tests:
 
 ```pwsh
-npx vitest
+npm test
 ```
 
 - Run tests with coverage:
 
 ```pwsh
-npm run test:coverage
+npm test:coverage
 ```
 
 - Start development server (auto-reloads):
