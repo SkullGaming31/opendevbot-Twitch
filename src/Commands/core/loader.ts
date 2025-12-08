@@ -15,20 +15,23 @@ export function loadCommands(commandsDir: string, logger?: LoggerLike): Map<stri
         // require the module so it works in node. If require fails (CI or ESM
         // resolution differences), fall back to `jiti` which can load TS/ESM
         // files at runtime in many environments.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+
         let mod: unknown;
         try {
+          // allow require here for runtime loading — eslint rule disabled
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           mod = require(path.join(commandsDir, file));
         } catch (err) {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
+
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const jiti = require('jiti')(process.cwd());
             mod = jiti(path.join(commandsDir, file));
-          } catch (err2) {
+          } catch {
             throw err; // rethrow original require error for outer catch
           }
         }
-        const cmd = mod && (mod.default || mod) as CommandType;
+        const cmd = (((mod as Partial<{ default?: CommandType }>).default) ?? (mod as CommandType)) as CommandType;
         if (!cmd || typeof cmd.name !== 'string' || typeof cmd.execute !== 'function') {
           logger?.warn?.({ file }, 'Skipping invalid chat command (missing name or execute)');
           continue;
