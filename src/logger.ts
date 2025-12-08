@@ -5,51 +5,63 @@ import pino from 'pino';
 const LOG_DIR = process.env.LOG_DIR ?? path.join(process.cwd(), 'logs');
 try {
   fs.mkdirSync(LOG_DIR, { recursive: true });
-} catch (e) {
-  // ignore
+} catch {
+  void 0;
 }
 
 const logFile = path.join(LOG_DIR, 'app.log');
-const level = (process.env.LOG_LEVEL as any) ?? 'info';
-
-// file logger destination
-const fileDest = pino.destination(logFile);
-const fileLogger = pino({ level }, fileDest);
+const level = (process.env.LOG_LEVEL as string) ?? 'info';
 
 // Optionally enable console pretty output in non-production or when explicitly requested
+let fileLogger: pino.Logger;
 let consoleLogger: pino.Logger | null = null;
 const wantConsole = process.env.LOG_TO_CONSOLE === 'true' || process.env.NODE_ENV !== 'production';
 if (wantConsole) {
   try {
-    // Use pino transport with pino-pretty if available for developer-friendly output
-    // This will log to stdout.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // When developers prefer console pretty output, avoid creating a file
+    // destination (sonic-boom) which can produce flush issues during exit in
+    // certain environments. Use a console-only logger in this case.
     const transport = pino.transport({ target: 'pino-pretty', options: { colorize: true } });
     consoleLogger = pino({ level }, transport);
-  } catch (err) {
+    fileLogger = pino({ level });
+  } catch {
     // fallback to a very small console wrapper if transport creation fails
     consoleLogger = pino({ level });
+    fileLogger = pino({ level });
   }
+} else {
+  // file logger destination (use async destination to avoid sync flush errors on exit)
+  const fileDest = pino.destination({ dest: logFile, sync: false });
+  fileLogger = pino({ level }, fileDest);
 }
 
 // Proxy logger that forwards calls to both fileLogger and optional consoleLogger
-const loggerProxy: any = new Proxy(fileLogger, {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const loggerProxy = new Proxy(fileLogger, {
   get(target, prop) {
-    const orig = (target as any)[prop];
-    if (typeof orig === 'function') {
-      return (...args: any[]) => {
+    const key = String(prop);
+    const value = (target as unknown as Record<string, unknown>)[key];
+    if (typeof value === 'function') {
+      return (...args: unknown[]) => {
         try {
-          (target as any)[prop](...args);
-        } catch {}
-        if (consoleLogger && typeof (consoleLogger as any)[prop] === 'function') {
+          // call original file logger method
+          (value as any).apply(target, args as any);
+        } catch {
+          void 0;
+        }
+        const cfn = (consoleLogger as unknown as Record<string, unknown> | null)?.[key];
+        if (cfn && typeof cfn === 'function') {
           try {
-            (consoleLogger as any)[prop](...args);
-          } catch {}
+            (cfn as any).apply(consoleLogger, args as any);
+          } catch {
+            void 0;
+          }
         }
       };
     }
-    return orig;
+    return value as any;
   },
 });
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export default loggerProxy as pino.Logger;

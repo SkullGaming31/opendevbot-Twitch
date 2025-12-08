@@ -96,10 +96,11 @@ export class TwitchChatClient extends EventEmitter {
       // Optional, immediate console debug for troubleshooting connection visibility
       try {
         if (process.env.CHAT_DEBUG_RAW as string === 'true' || process.env.LOG_TO_CONSOLE as string === 'true') {
-          // eslint-disable-next-line no-console
           // console.log('[chat] websocket open', { nick: this.nick });
         }
-      } catch (e) { }
+      } catch (e) {
+        logger?.debug?.({ err: String(e) }, 'chat websocket open debug failed');
+      }
       // Authenticate
       this.sendRaw(`PASS ${this.token}`);
       this.sendRaw(`NICK ${this.nick}`);
@@ -117,10 +118,11 @@ export class TwitchChatClient extends EventEmitter {
       // Debug raw IRC payload to console when requested to help troubleshooting
       try {
         if (process.env.CHAT_DEBUG_RAW as string === 'true') {
-          // eslint-disable-next-line no-console
           console.debug('[irc-raw]', text);
         }
-      } catch (e) { }
+      } catch (e) {
+        logger?.debug?.({ err: String(e) }, 'chat raw debug failed');
+      }
       for (const line of text.split(/\r?\n/)) {
         if (!line) continue;
         const msg = parseIRCLine(line);

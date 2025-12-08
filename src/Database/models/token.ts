@@ -48,9 +48,8 @@ const TokenSchema = new Schema<IToken>({
 });
 
 // Avoid model overwrite errors when tests reset modules: reuse existing model if present.
-export const TokenModel = (mongoose.models && (mongoose.models as any).Token)
-  ? (mongoose.models as any).Token
-  : model<IToken>('Token', TokenSchema);
+const existingModel = (mongoose.models && (mongoose.models as unknown as Record<string, mongoose.Model<IToken>>).Token) as mongoose.Model<IToken> | undefined;
+export const TokenModel = existingModel ? existingModel : model<IToken>('Token', TokenSchema);
 
 // Helper input type for create/update operations
 // TokenInput allows creating/updating tokens. `user_id` is optional because

@@ -34,7 +34,7 @@ app.use(
 // Request logging middleware using centralized logger
 app.use((req, _res, next) => {
   logger.info({ method: req.method, url: req.url }, 'incoming request');
-  (req as any).logger = logger;
+  (req as unknown as { logger?: unknown }).logger = logger;
   next();
 });
 
@@ -46,7 +46,7 @@ app.get(`${API_PREFIX}/metrics`, async (_req, res) => {
   try {
     res.set('Content-Type', client.register.contentType);
     res.end(await client.register.metrics());
-  } catch (err: any) {
+  } catch (err) {
     res.status(500).send(String(err));
   }
 });
@@ -102,7 +102,7 @@ app.get(`${API_PREFIX}/auth/twitch/callback`, async (req, res) => {
 
     // Log redacted token info for verification (do not log raw tokens)
     try {
-      const doc: any = created;
+      const doc = created as unknown as { _id?: { toString?: () => string }; user_id?: string; scopes?: unknown; expires_at?: unknown; obtained_at?: unknown };
       logger.info({
         _id: doc?._id?.toString?.() ?? null,
         user_id: doc?.user_id ?? null,
@@ -123,18 +123,22 @@ app.get(`${API_PREFIX}/auth/twitch/callback`, async (req, res) => {
     });
 
     const userId = userResp?.data?.data?.[0]?.id;
-    if (userId && created && typeof (created as any)._id !== 'undefined') {
-      const updated = await attachUserIdToToken((created as any)._id.toString(), userId);
-      // Log update result for verification
-      try {
-        const u: any = updated;
-        logger.info({
-          _id: u?._id?.toString?.() ?? null,
-          user_id: u?.user_id ?? userId,
-          scopes: u?.scopes ?? scopes,
-        }, 'Token updated with user_id');
-      } catch (e) {
-        logger.warn({ err: String(e) }, 'Token updated (could not format)');
+    if (userId && created) {
+      const maybeId = (created as unknown as { _id?: { toString?: () => string } })._id;
+      if (maybeId && typeof maybeId.toString === 'function') {
+        const idStr = maybeId.toString();
+        const updated = await attachUserIdToToken(idStr, userId);
+        // Log update result for verification
+        try {
+          const u = updated as unknown as { _id?: { toString?: () => string }; user_id?: string; scopes?: unknown };
+          logger.info({
+            _id: u?._id?.toString?.() ?? null,
+            user_id: u?.user_id ?? userId,
+            scopes: u?.scopes ?? scopes,
+          }, 'Token updated with user_id');
+        } catch (e) {
+          logger.warn({ err: String(e) }, 'Token updated (could not format)');
+        }
       }
     }
     res.send('Authorization successful — token saved. You can close this window.');

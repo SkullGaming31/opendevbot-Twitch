@@ -6,7 +6,9 @@ import mongoose from 'mongoose';
 import { TokenModel, IToken, TokenInput, TokenAttrs } from './models/token';
 import logger from '../logger';
 
-let cached = globalThis as any;
+interface MongooseCache { conn: mongoose.Connection | null; promise: Promise<mongoose.Connection> | null }
+interface GlobalCache { _mongoose?: MongooseCache }
+const cached = (globalThis as unknown as GlobalCache);
 if (!cached._mongoose) {
   cached._mongoose = { conn: null, promise: null };
 }
@@ -25,15 +27,20 @@ export async function connectDB(mongoUri?: string) {
 
   if (!uri) throw new Error('MongoDB connection string not set (expected MONGO_URI or MONGODB_URI or DOCKER_URI)');
 
-  if (cached._mongoose.conn) {
-    return cached._mongoose.conn;
+  // Ensure we have a local reference to the cached mongoose container so
+  // TypeScript can reason about it being defined for the remainder of this
+  // function. This also avoids repeated optional chaining at each use site.
+  const mcache: MongooseCache = cached._mongoose ?? (cached._mongoose = { conn: null, promise: null });
+
+  if (mcache.conn) {
+    return mcache.conn;
   }
 
-  if (!cached._mongoose.promise) {
-    cached._mongoose.promise = mongoose.connect(uri).then((m) => m.connection);
+  if (!mcache.promise) {
+    mcache.promise = mongoose.connect(uri).then((m) => m.connection);
   }
-  cached._mongoose.conn = await cached._mongoose.promise;
-  return cached._mongoose.conn;
+  mcache.conn = await mcache.promise;
+  return mcache.conn;
 }
 
 export function getMongoose() {
@@ -68,7 +75,7 @@ if (autoUri) {
       return 'REDACTED';
     }
   };
-  // logger.info({ uri: redacted(autoUri), source: chosenSource }, 'Using MongoDB URI');
+  logger.info({ uri: redacted(autoUri), source: chosenSource }, 'Using MongoDB URI');
 
   dbReady = connectDB(autoUri)
     .then((conn) => {

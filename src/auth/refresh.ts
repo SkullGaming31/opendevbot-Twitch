@@ -7,7 +7,10 @@ import logger from '../logger';
 // when test suites mock `dbReady` as a rejected Promise before we attach
 // our own .then/.catch handlers in `startRefreshWorker`.
 /* istanbul ignore next */
-if (dbReady && typeof (dbReady as any).catch === 'function') (dbReady as any).catch(() => {});
+if (dbReady) {
+  const thenable = dbReady as unknown as { catch?: (fn: (e: unknown) => void) => unknown };
+  if (typeof thenable.catch === 'function') thenable.catch(() => void 0);
+}
 
 // In test environments, attach a lightweight unhandledRejection handler to
 // prevent Vitest from treating intentionally-rejected mocked promises as
@@ -17,8 +20,10 @@ if (dbReady && typeof (dbReady as any).catch === 'function') (dbReady as any).ca
 if (process.env.NODE_ENV === 'test') {
   process.on('unhandledRejection', (reason) => {
     try {
-      logger?.warn ? logger.warn({ err: String(reason) }, 'unhandledRejection') : undefined;
-    } catch {}
+      logger?.warn?.({ err: String(reason) }, 'unhandledRejection');
+    } catch {
+      void 0;
+    }
   });
 }
 
@@ -70,7 +75,7 @@ async function processBatch(opts: Required<RefreshOptions>) {
 
   // base selection criteria (doesn't include processing lock checks)
   // Only include tokens that either have no expires_at (legacy tokens) OR are already expired (expires_at <= now)
-  const baseQuery: any = {
+  const baseQuery: Record<string, unknown> = {
     refresh_token: { $exists: true, $ne: null },
     disabled: { $ne: true },
     $or: [
@@ -84,33 +89,36 @@ async function processBatch(opts: Required<RefreshOptions>) {
   // by setting a processing lock. If not (e.g. in older test mocks), fall back
   // to the original `find(...).limit(...)` behavior for compatibility.
   let claimed: IToken[] = [];
-  if (typeof (TokenModel as any).findOneAndUpdate === 'function') {
+  type MaybeModel = { findOneAndUpdate?: (...args: unknown[]) => unknown; findByIdAndUpdate?: (...args: unknown[]) => unknown; find?: (...args: unknown[]) => unknown };
+  const maybeModel = TokenModel as unknown as MaybeModel;
+  if (typeof maybeModel.findOneAndUpdate === 'function') {
     claimed = [];
     for (let i = 0; i < opts.batchSize; i++) {
-    // allow claiming tokens that are not processing, or whose processing_at is stale
-    const now = new Date();
-    const staleAt = new Date(Date.now() - lockStaleMs);
-    const claimQuery = {
-      ...baseQuery,
-      $or: [
-        { processing: { $exists: false } },
-        { processing: false },
-        { processing_at: { $lte: staleAt } },
-      ],
-    } as any;
+      // allow claiming tokens that are not processing, or whose processing_at is stale
+      const now = new Date();
+      const staleAt = new Date(Date.now() - lockStaleMs);
+      const claimQuery: Record<string, unknown> = {
+        ...baseQuery,
+        $or: [
+          { processing: { $exists: false } },
+          { processing: false },
+          { processing_at: { $lte: staleAt } },
+        ],
+      };
 
-    const claimedDoc = await TokenModel.findOneAndUpdate(
-      claimQuery,
-      { $set: { processing: true, processing_at: now } },
-      { new: true }
-    ).exec();
+      const claimedDoc = await (maybeModel.findOneAndUpdate as (...a: unknown[]) => Promise<unknown>)(
+        claimQuery,
+        { $set: { processing: true, processing_at: now } },
+        { new: true }
+      ) as unknown as IToken | null;
 
-    if (!claimedDoc) break;
-    claimed.push(claimedDoc);
-  }
+      if (!claimedDoc) break;
+      claimed.push(claimedDoc);
+    }
   } else {
     // fallback for test mocks that only implement `find`.
-    const tokens = await TokenModel.find(baseQuery).limit(opts.batchSize).exec();
+    const res = await (maybeModel.find as (...a: unknown[]) => Promise<unknown>)(baseQuery) as unknown as IToken[];
+    const tokens = Array.isArray(res) ? res.slice(0, opts.batchSize) : [];
     claimed = tokens || [];
   }
 
@@ -119,18 +127,18 @@ async function processBatch(opts: Required<RefreshOptions>) {
   for (const t of claimed) {
     try {
       // If the token already has a future expires_at, skip refreshing.
-          if (t.expires_at) {
+      if (t.expires_at) {
         try {
-          const expires = new Date(t.expires_at as any);
+          const expires = new Date(t.expires_at as Date | string);
           const now = new Date();
           if (expires > now) {
             // logger.info({ _id: t._id?.toString?.(), expires_at: expires.toISOString() }, '[refresh] skipping token (not expired)');
             // release processing lock if model supports it
-            if (typeof (TokenModel as any).findByIdAndUpdate === 'function') {
+            if (typeof maybeModel.findByIdAndUpdate === 'function') {
               try {
-                await (TokenModel as any).findByIdAndUpdate(t._id, { $set: { processing: false, processing_at: null } }).exec();
-              } catch (releaseErr: any) {
-                logger.warn({ _id: t._id?.toString?.(), err: releaseErr?.message ?? String(releaseErr) }, '[refresh] failed to release processing lock');
+                await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { processing: false, processing_at: null } });
+              } catch (releaseErr) {
+                logger.warn({ _id: t._id?.toString?.(), err: (releaseErr as Error)?.message ?? String(releaseErr) }, '[refresh] failed to release processing lock');
               }
             }
             continue;
@@ -144,30 +152,32 @@ async function processBatch(opts: Required<RefreshOptions>) {
       const data = await refreshTokenDoc(t as IToken);
       const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000) : undefined;
 
-      const update: any = {
+      const update: Record<string, unknown> = {
         access_token: data.access_token,
         obtained_at: new Date(),
       };
       if (data.refresh_token) update.refresh_token = data.refresh_token;
       if (expiresAt) update.expires_at = expiresAt;
 
-      const updated = await TokenModel.findByIdAndUpdate(t._id, { $set: update }, { new: true }).exec();
+      const updated = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: update }, { new: true }) as unknown as IToken | null;
       logger.info({ _id: updated?._id?.toString?.(), expires_at: updated?.expires_at }, '[refresh] token refreshed');
       // On success reset retry_count and ensure token is enabled
-      await TokenModel.findByIdAndUpdate(t._id, { $set: { retry_count: 0, disabled: false, processing: false, processing_at: null } }).exec();
-    } catch (err: any) {
-      logger.warn({ _id: t._id?.toString?.(), err: err?.response?.data ?? err?.message ?? String(err) }, '[refresh] failed to refresh token');
+      await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { retry_count: 0, disabled: false, processing: false, processing_at: null } });
+    } catch (err) {
+      const respData = (err as { response?: { data?: unknown } })?.response?.data;
+      const errMsg = respData ?? ((err as Error)?.message ?? String(err));
+      logger.warn({ _id: t._id?.toString?.(), err: errMsg }, '[refresh] failed to refresh token');
       try {
         // Increment retry_count atomically and read back new value, also release processing lock
-        const incRes: any = await TokenModel.findByIdAndUpdate(
+        const incRes = await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(
           t._id,
           { $inc: { retry_count: 1 }, $set: { processing: false, processing_at: null } },
           { new: true }
-        ).exec();
+        ) as unknown as { retry_count?: number } | null;
         const newCount = (incRes && incRes.retry_count) || 0;
         if (newCount >= opts.maxRetries) {
           // disable the token to avoid endless retries
-          await TokenModel.findByIdAndUpdate(t._id, { $set: { disabled: true } }).exec();
+          await (maybeModel.findByIdAndUpdate as (...a: unknown[]) => Promise<unknown>)(t._id, { $set: { disabled: true } });
           logger.warn({ _id: t._id?.toString?.(), retry_count: newCount }, '[refresh] token disabled due to repeated failures');
         }
       } catch (innerErr) {

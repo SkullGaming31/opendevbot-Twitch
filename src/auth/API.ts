@@ -1,5 +1,4 @@
 import axios from 'axios';
-axios.defaults;
 
 /**
  * Axios instances for calling Twitch API interactions

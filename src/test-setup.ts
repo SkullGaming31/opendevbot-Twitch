@@ -5,8 +5,10 @@ import logger from './logger';
 // create rejected Promises (e.g., mocks) don't cause Vitest to fail the run.
 process.on('unhandledRejection', (reason) => {
   try {
-    logger?.warn ? logger.warn({ err: String(reason) }, '[test-setup] unhandledRejection') : undefined;
-  } catch {}
+    logger?.warn?.({ err: String(reason) }, '[test-setup] unhandledRejection');
+  } catch {
+    void 0;
+  }
 });
 
 // Ensure NODE_ENV=test for conditional code paths

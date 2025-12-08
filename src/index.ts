@@ -2,7 +2,8 @@ import dotenv from 'dotenv';
 // Load env early so other modules (logger, server) see the configured values
 dotenv.config({ debug: false, quiet: true });
 import { dbReady } from './Database';
-import { buildAuthorizeUrl, CHANNEL_SCOPES, MODERATION_SCOPES, SCOPES } from './auth/scopes';
+import type { EventSubClient as EventSubClientType } from './Events';
+import { buildAuthorizeUrl, CHANNEL_SCOPES, MODERATION_SCOPES } from './auth/scopes';
 import app from './server';
 import logger from './logger';
 
@@ -34,6 +35,8 @@ async function main() {
 		],
 		forceVerify: false,
 	});
+	// Log the example authorize URL for developer convenience (redacted by default in logs)
+	logger.info({ authorizeUrl: url }, 'Example authorize URL');
 }
 
 main().catch((err: unknown) => {
@@ -53,82 +56,58 @@ app.listen(port, () => {
 
 // Optionally start chat manager if enabled via `CHAT_ENABLED=true`
 if (process.env.CHAT_ENABLED === 'true') {
-	// Lazy-require to avoid loading chat code during tests by default
-	// eslint-disable-next-line @typescript-eslint/no-var-requires
-	const chatManager = require('./chat').default;
-	// Load command modules from `src/commands` (optional folder). Each file should export default { name, aliases?, cooldownMs?, execute }
-	// Commands are registered by lowercase name and aliases.
-	try {
-		// lazy import to avoid circular requires during startup
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const { loadCommands } = require('./commands/loader');
-		const commandsDir = require('path').join(__dirname, 'commands');
-		const commands = loadCommands(commandsDir, logger as any);
-		(chatManager as any).__commands = commands;
-		(chatManager as any).__commandLastUsed = new Map();
-	} catch (err) {
-		logger.warn({ err: String(err) }, 'Failed to initialize chat commands');
-	}
-	// Attach built-in listeners so the bot handles incoming messages in-process
-	chatManager.on('connected', () => logger.info('chat manager connected'));
-	chatManager.on('disconnected', (d: any) => logger.info({ d }, 'chat manager disconnected'));
-	chatManager.on('error', (e: any) => logger.warn({ err: String(e) }, 'chat manager error'));
-	chatManager.on('raw', (m: any) => logger.debug({ m }, 'chat raw'));
-	chatManager.on('message', (m: any) => {
+	(async () => {
 		try {
-			const channel = m.channel ?? '<unknown>';
-			const display = (m.tags && (m.tags['display-name'] || m.tags['login'])) || m.prefix || 'unknown';
-			const text = m.text ?? (m.params && m.params[1]) ?? '';
-			// Log common chat fields; include full parsed message when opt-in
-			const logPayload: any = { channel, display, text };
-			if (process.env.CHAT_LOG_FULL === 'true') {
-				logPayload.message = m;
-			}
-			logger.info(logPayload, 'chat message');
+			// Dynamic import so tests that don't need chat won't load it
+			const chatModule = await import('./chat');
+			const chatManager = (chatModule as unknown as { default: unknown }).default as unknown;
 
-			// Auto-detect privilege from tags and update rate-limiter
 			try {
-				const badgesRaw = m.tags && m.tags.badges ? String(m.tags.badges) : '';
-				const badges = badgesRaw ? badgesRaw.split(',').map((b: string) => b.split('/')[0]) : [];
-				const isPriv = badges.includes('broadcaster') || badges.includes('moderator') || badges.includes('vip');
-				if (isPriv) chatManager.setChannelPrivilege(channel, true);
-			} catch (e) {
-				// ignore badge parsing errors
+				const loader = await import('./Commands/core/loader');
+				const pathMod = await import('path');
+				const commandsDir = pathMod.join(__dirname, 'Commands');
+				const commands = await (loader as unknown as { loadCommands?: (dir: string, lg?: unknown) => unknown }).loadCommands!(commandsDir, logger as unknown);
+				(chatManager as unknown as { __commands?: Map<string, unknown> }).__commands = commands as unknown as Map<string, unknown>;
+				(chatManager as unknown as { __commandLastUsed?: Map<string, number> }).__commandLastUsed = new Map();
+			} catch (err) {
+				logger.warn({ err: String(err) }, 'Failed to initialize chat commands');
 			}
 
-			// Command dispatching: messages starting with '!'
-			try {
-				if (typeof text === 'string' && text.trim().startsWith('!')) {
-					const parts = text.trim().slice(1).split(/\s+/);
-					const invoked = parts[0] ? String(parts[0]).toLowerCase() : '';
-					const args = parts.slice(1);
-					const commands = (chatManager as any).__commands as Map<string, any> | undefined;
-					const lastUsed = (chatManager as any).__commandLastUsed as Map<string, number> | undefined;
-					const cmd = commands?.get(invoked);
-					if (cmd && typeof cmd.execute === 'function') {
-						const now = Date.now();
-						const cooldown = Number(cmd.cooldownMs || cmd.cooldown || 0) || 0;
-						const last = lastUsed?.get(cmd.name) || 0;
-						if (cooldown > 0 && now - last < cooldown) {
-							logger.debug({ command: cmd.name, channel }, 'command on cooldown');
-						} else {
-							try {
-								lastUsed?.set(cmd.name, now);
-								Promise.resolve(cmd.execute({ channel, display, text, args, chatManager, raw: m, logger, commands: (chatManager as any).__commands }))
-									.catch((err: any) => logger.warn({ err: String(err), command: cmd.name }, 'chat command execution failed'));
-							} catch (ex) {
-								logger.warn({ err: String(ex), command: cmd.name }, 'chat command execution error');
-							}
-						}
-					}
-				}
-			} catch (e) {
-				logger.warn({ err: String(e) }, 'chat command handler failed');
-			}
-		} catch (e) {
-			logger.warn({ err: String(e) }, 'chat message handler failed');
+			// Attach built-in listeners so the bot handles incoming messages in-process
+			(chatManager as { on?: (ev: string, fn: unknown) => void }).on?.('connected', () => logger.info('chat manager connected'));
+			(chatManager as { on?: (ev: string, fn: unknown) => void }).on?.('disconnected', (d: unknown) => logger.info({ d }, 'chat manager disconnected'));
+			(chatManager as { on?: (ev: string, fn: unknown) => void }).on?.('error', (e: unknown) => logger.warn({ err: String(e) }, 'chat manager error'));
+			(chatManager as { on?: (ev: string, fn: unknown) => void }).on?.('raw', (m: unknown) => logger.debug({ m }, 'chat raw'));
+
+			const dispatcher = await import('./Commands/dispatcher');
+			const dispatcherMod = dispatcher as unknown as { handleMessage?: (m: unknown, chatManager: unknown, logger: unknown) => Promise<void> };
+			(chatManager as unknown as { on?: (ev: string, fn: unknown) => void }).on?.('message', (m: unknown) => dispatcherMod.handleMessage?.(m, chatManager, logger).catch((e: unknown) => logger.warn({ err: String(e) }, 'dispatch failed')));
+
+			(chatManager as { start?: () => Promise<void> }).start?.().catch((err: unknown) => logger.warn({ err: String(err) }, 'chat manager failed to start'));
+		} catch (err) {
+			logger.warn({ err: String(err) }, 'Failed to initialize chat manager');
 		}
-	});
+	})();
+}
 
-	chatManager.start().catch((err: any) => logger.warn({ err: String(err) }, 'chat manager failed to start'));
+// Optionally start EventSub websocket client if enabled via `EVENTS_ENABLED=true`
+if (process.env.EVENTS_ENABLED === 'true') {
+	(async () => {
+		try {
+			const eventsModule = await import('./Events');
+			const EventSubClientCtor = (eventsModule as unknown as { EventSubClient: new (opts?: unknown) => EventSubClientType }).EventSubClient;
+			const wsUrl = process.env.EVENTS_WS_URL as string | undefined;
+			const reconnectMs = Number(process.env.EVENTS_RECONNECT_MS ?? '5000');
+			const client = new EventSubClientCtor({ url: wsUrl, reconnectIntervalMs: reconnectMs });
+
+			client.on('connected', () => logger.info('EventSub websocket connected'));
+			client.on('disconnected', (d: unknown) => logger.info({ d }, 'EventSub websocket disconnected'));
+			client.on('error', (e: unknown) => logger.warn({ err: String(e) }, 'EventSub websocket error'));
+			client.on('raw', (m: unknown) => logger.debug({ m }, 'eventsub raw'));
+
+			client.connect();
+		} catch (err) {
+			logger.warn({ err: String(err) }, 'Failed to initialize EventSub client');
+		}
+	})();
 }

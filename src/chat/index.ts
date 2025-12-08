@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 import logger from '../logger';
 import TwitchChatClient from './TwitchChatClient';
-import { TokenModel } from '../Database';
+import { TokenModel, IToken } from '../Database';
 import { helix } from '../auth/API';
 
 export interface ChatManagerOptions {
@@ -49,7 +49,7 @@ class ChatManager extends EventEmitter {
     const botUserId = this.opts.botUserId ?? process.env.CHAT_BOT_USER_ID;
     if (!token && botUserId) {
       const doc = await TokenModel.findOne({ user_id: botUserId }).exec();
-      token = doc?.access_token as any;
+      token = doc?.access_token as string | undefined;
       if (token) logger.info({ botUserId }, 'Loaded bot token from DB');
     }
 
@@ -90,7 +90,7 @@ class ChatManager extends EventEmitter {
         const botToken = token.startsWith('oauth:') ? token.slice('oauth:'.length) : token;
         for (const t of tokens) {
           try {
-            const userId = (t as any).user_id;
+            const userId = (t as IToken).user_id;
             // Skip joining the bot's own channel
             if (botUserId && String(userId) === String(botUserId)) {
               continue;

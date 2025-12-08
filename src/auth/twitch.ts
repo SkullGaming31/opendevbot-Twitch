@@ -1,5 +1,5 @@
 import { authURL } from './API';
-import { TokenModel, IToken, TokenInput, TokenAttrs } from '../Database';
+import { TokenModel, IToken, TokenInput } from '../Database';
 
 /**
  * DB-backed token helpers for storing and retrieving Twitch tokens.
@@ -32,7 +32,7 @@ export async function saveOrUpdateToken(token: TokenInput) {
 	}
 
 	// Create a new token doc without a user_id; caller can attach user_id later
-	const created = await TokenModel.create({ ...(update as any) });
+	const created = await TokenModel.create(update as unknown as TokenInput);
 	return created;
 }
 
