@@ -1,0 +1,22 @@
+# Issue template configuration — define order and defaults
+# See: https://docs.github.com/en/issues/using-labels-and-milestones-to-track-work/about-issue-templates
+
+blank_issues_enabled: false
+contact_links:
+  - name: Security contact
+    url: /.github/SECURITY.md
+    about: Report security issues privately (see SECURITY.md)
+
+issue_templates:
+  - name: "Bug report"
+    about: "Create a report to help us improve"
+    title: "Bug: [short summary]"
+    labels: ["bug"]
+  - name: "Feature request"
+    about: "Suggest an idea for this project"
+    title: "Feature: [short summary]"
+    labels: ["enhancement"]
+  - name: "Security issue"
+    about: "Report a security vulnerability (private)"
+    title: "Security: [short summary]"
+    labels: ["security"]
