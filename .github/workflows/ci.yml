@@ -21,11 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Enable ESM package.json for CI-only
-        # Write a temporary package.json that includes "type":"module" so Vite (ESM) can be loaded in CI
-        run: |
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.type='module';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
-
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
