@@ -1,8 +1,14 @@
 import dotenv from 'dotenv';
-import { webcrypto } from 'node:crypto';
+import { webcrypto as nodeWebcrypto } from 'node:crypto';
 // Ensure Web Crypto API is available (Node 18+ exposes webcrypto but not globalThis.crypto)
-const globalWithOptionalCrypto = globalThis as typeof globalThis & { crypto?: typeof webcrypto };
-if (!globalWithOptionalCrypto.crypto) globalWithOptionalCrypto.crypto = webcrypto;
+try {
+	const g = globalThis as typeof globalThis & { crypto?: typeof nodeWebcrypto };
+	if (typeof g.crypto === 'undefined') {
+		g.crypto = nodeWebcrypto;
+	}
+} catch {
+	// ignore if unavailable
+}
 // Load env early so other modules (logger, server) see the configured values
 dotenv.config({ debug: false, quiet: true });
 import { dbReady } from './Database';
