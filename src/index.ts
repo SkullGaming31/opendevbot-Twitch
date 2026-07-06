@@ -1,10 +1,10 @@
 import dotenv from 'dotenv';
-// Ensure Web Crypto API is available (Node 18+ exposes webcrypto but not globalThis.crypto)
 import { webcrypto as nodeWebcrypto } from 'node:crypto';
+// Ensure Web Crypto API is available (Node 18+ exposes webcrypto but not globalThis.crypto)
 try {
-	const g = globalThis as unknown as { crypto?: typeof nodeWebcrypto };
+	const g = globalThis as typeof globalThis & { crypto?: typeof nodeWebcrypto };
 	if (typeof g.crypto === 'undefined') {
-		g.crypto = nodeWebcrypto as unknown as typeof nodeWebcrypto;
+		g.crypto = nodeWebcrypto;
 	}
 } catch {
 	// ignore if unavailable
