@@ -8,3 +8,5 @@ npm-debug.log*
 /scripts
 NOTES.txt
 /logs/app.log
+/.agents
+*.agent.md

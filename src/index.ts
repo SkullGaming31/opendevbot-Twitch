@@ -1,4 +1,12 @@
 import dotenv from 'dotenv';
+// Ensure Web Crypto API is available (Node 18+ exposes webcrypto but not globalThis.crypto)
+try {
+	// eslint-disable-next-line @typescript-eslint/no-var-requires
+	const { webcrypto } = require('node:crypto');
+	if (!(globalThis as any).crypto) (globalThis as any).crypto = webcrypto;
+} catch {
+	// ignore if unavailable
+}
 // Load env early so other modules (logger, server) see the configured values
 dotenv.config({ debug: false, quiet: true });
 import { dbReady } from './Database';
