@@ -1,0 +1,287 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenDevBot - Electron UI</title>
+  <style>
+    :root{
+      --bg:#0f1724;
+      --panel:#0b1220;
+      --muted:#9aa4b2;
+      --accent:#60a5fa;
+      --success:#34d399;
+      --warn:#f6c85f;
+      --danger:#ff6b6b;
+      --glass: rgba(255,255,255,0.03);
+    }
+    html,body{height:100%;}
+    body {
+      margin:0; padding:20px; font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background: linear-gradient(180deg,#071022 0%, #071a2a 100%);
+      color: #dbeafe;
+      -webkit-font-smoothing:antialiased;
+    }
+    header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+    header h1{margin:0;font-size:20px}
+    .subtitle{color:var(--muted);font-size:13px}
+
+    .container{display:grid;grid-template-columns:320px 1fr;gap:18px;align-items:start}
+    .panel{background:var(--panel);border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.02)}
+    .left .status{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .status .badge{padding:6px 10px;border-radius:999px;font-weight:600}
+    .badge.unknown{background:var(--glass);color:var(--muted)}
+    .badge.up{background:linear-gradient(90deg,var(--success),#10b981);color:#042018}
+    .badge.down{background:linear-gradient(90deg,#ef4444,#f97316);color:#2b0500}
+
+    .controls{display:flex;flex-direction:column;gap:10px}
+    .controls .row{display:flex;gap:8px;align-items:center}
+    .controls button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:var(--accent);cursor:pointer}
+    .controls button:hover{background:rgba(255,255,255,0.02)}
+    .controls button.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:white;border:none}
+    .controls button.warn{background:linear-gradient(90deg,var(--warn),#f59e0b);color:#2b1500;border:none}
+
+    .right{display:flex;flex-direction:column;gap:12px}
+    pre{background:#041018;color:#bfeccb;padding:12px;border-radius:8px;height:420px;overflow:auto;font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+    .meta{color:var(--muted);font-size:13px}
+    .small{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OpenDevBot</h1>
+    <small>Electron UI</small>
+  </header>
+  <p>This Electron wrapper runs from the repository directory and controls the OpenDevBot backend. OpenDevBot connects to Twitch to provide chat commands(DONE), moderation helpers(TODO), and EventSub-driven integrations(TODO).</p>
+  <p>Use the Authorize buttons to run the OAuth flows for bot or user access. The buttons also open backend metrics and health endpoints; status and quick logs below show runtime state.</p>
+
+  <div class="container">
+    <div class="left panel">
+      <div class="status">
+        <div>
+          <strong>Backend status</strong>
+          <div class="small meta">(updates every 5 minutes or on start/stop)</div>
+        </div>
+        <div id="statusBadge" class="badge unknown">unknown</div>
+      </div>
+
+      <div class="controls">
+        <div class="row">
+          <button id="startBtn" class="primary" title="Spawn the local backend (uses compiled dist or ts-node)" aria-label="Start Backend">Start</button>
+          <button id="stopBtn" class="warn" title="Stop the spawned backend process" aria-label="Stop Backend">Stop</button>
+          <span id="startResult" class="small" style="margin-left:8px"></span>
+        </div>
+
+        <div class="row">
+          <button id="authBtn" title="Authorize the bot for your channel (opens Twitch authorize flow)" aria-label="Authorize Bot">Authorize Bot</button>
+          <button id="userAuthBtn" title="Authorize your user account (opens Twitch authorize flow)" aria-label="Authorize User">Authorize User</button>
+        </div>
+
+        <div class="row">
+          <button id="metricsBtn" title="Open Prometheus metrics endpoint" aria-label="Open Metrics">Metrics</button>
+          <button id="healthBtn" title="Open backend health endpoint" aria-label="Open Health">Health</button>
+          <button id="clearLogs">Clear Logs</button>
+        </div>
+
+        
+      </div>
+    </div>
+
+    <div class="right panel">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0">Quick logs</h3>
+        <div class="meta">Real-time server output</div>
+      </div>
+      <pre id="log">(logs from the server appear here)</pre>
+    </div>
+  </div>
+
+  <script>
+    const statusBadge = document.getElementById('statusBadge');
+    const logEl = document.getElementById('log');
+
+    // We no longer poll /api/v1 here. The Electron main process periodically
+    // probes the backend `/api/v1/health` every 5 minutes and sends
+    // `server-health` IPC messages which the preload exposes via
+    // `window.electronAPI.onServerHealth`.
+    if (window.electronAPI && window.electronAPI.onServerHealth) {
+      const unsubHealth = window.electronAPI.onServerHealth((msg) => {
+        try {
+          if (!msg || !msg.ok) {
+            if (statusBadge) { statusBadge.textContent = 'down'; statusBadge.className = 'badge down'; }
+            return;
+          }
+          // prefer structured body
+          const body = msg.body || {};
+          const s = msg.status || (body && body.status ? 200 : 0);
+          if (s >= 200 && s < 400) {
+            if (statusBadge) { statusBadge.textContent = `up (pid ${body && body.pid ? body.pid : msg.port || '3001'})`; statusBadge.className = 'badge up'; }
+          } else {
+            if (statusBadge) { statusBadge.textContent = `responding (${s})`; statusBadge.className = 'badge unknown'; }
+          }
+        } catch (e) { statusEl.textContent = 'unknown'; }
+      });
+      window.addEventListener('beforeunload', () => { if (typeof unsubHealth === 'function') unsubHealth(); });
+    }
+
+    // React to explicit readiness events emitted when the main process
+    // parses server logs and determines the backend is ready (e.g. chat manager connected)
+    if (window.electronAPI && window.electronAPI.onServerReady) {
+      const unsubReady = window.electronAPI.onServerReady((msg) => {
+        try {
+          const ready = !!(msg && msg.ready);
+          if (ready) {
+            if (statusBadge) { statusBadge.textContent = 'up (ready)'; statusBadge.className = 'badge up'; }
+          } else {
+            if (statusBadge) { statusBadge.textContent = 'down'; statusBadge.className = 'badge down'; }
+          }
+        } catch (e) { /* ignore */ }
+      });
+      window.addEventListener('beforeunload', () => { if (typeof unsubReady === 'function') unsubReady(); });
+    }
+
+    // If you want logs in the UI, run Electron with IPC wiring. For now, logs
+    // are printed to the terminal where you started the server/Electron.
+    const startBtn = document.getElementById('startBtn');
+    const startResult = document.getElementById('startResult');
+    if (startBtn && window.electronAPI && window.electronAPI.startServer) {
+      startBtn.addEventListener('click', async () => {
+        startResult.textContent = 'starting...';
+        try {
+          const res = await window.electronAPI.startServer();
+          if (res && res.ok) {
+            const status = res.status || 0;
+            if (status >= 200 && status < 400) {
+              startResult.textContent = `started (status ${status})`;
+              if (statusBadge) { statusBadge.textContent = `up (${status})`; statusBadge.className = 'badge up'; }
+            } else if (status > 0) {
+              startResult.textContent = `started (responding ${status})`;
+              if (statusBadge) { statusBadge.textContent = `responding (${status})`; statusBadge.className = 'badge unknown'; }
+            } else {
+              startResult.textContent = `started (no http response)`;
+              if (statusBadge) { statusBadge.textContent = 'starting'; statusBadge.className = 'badge unknown'; }
+            }
+          } else {
+            startResult.textContent = 'error: ' + (res?.error || 'unknown');
+          }
+        } catch (e) {
+          startResult.textContent = 'error';
+        }
+      });
+    } else if (startBtn) {
+      startBtn.style.display = 'none';
+    }
+
+    // Buttons
+    const stopBtn = document.getElementById('stopBtn');
+    const authBtn = document.getElementById('authBtn');
+    const metricsBtn = document.getElementById('metricsBtn');
+    const clearBtn = document.getElementById('clearLogs');
+
+    if (stopBtn && window.electronAPI && window.electronAPI.stopServer) {
+      stopBtn.addEventListener('click', async () => {
+        stopBtn.disabled = true;
+        try {
+          const res = await window.electronAPI.stopServer();
+            if (res && res.ok) {
+            startResult.textContent = 'stopped';
+            if (statusBadge) { statusBadge.textContent = 'stopped'; statusBadge.className = 'badge unknown'; }
+          } else {
+            startResult.textContent = 'error: ' + (res?.error || 'unknown');
+          }
+        } catch (e) {
+          startResult.textContent = 'error';
+        } finally { stopBtn.disabled = false; }
+      });
+    } else if (stopBtn) stopBtn.style.display = 'none';
+
+    if (authBtn) {
+      authBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const w = window.open('http://localhost:3001/api/v1/twitch/bot', '_blank');
+        if (!w) alert('Unable to open authorize URL');
+      });
+    }
+
+    const userAuthBtn = document.getElementById('userAuthBtn');
+    if (userAuthBtn) {
+      userAuthBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const w = window.open('http://localhost:3001/api/v1/twitch/user', '_blank');
+        if (!w) alert('Unable to open user authorize URL');
+      });
+    }
+
+    if (metricsBtn) {
+      metricsBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const url = 'http://localhost:3001/api/v1/metrics';
+        try {
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), 2000);
+          try {
+            await fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal });
+            // reachable — open in new window
+            const w = window.open(url, '_blank');
+            if (!w) alert('Unable to open metrics URL');
+          } finally {
+            clearTimeout(id);
+          }
+        } catch (err) {
+          alert('Metrics endpoint not reachable: ' + String(err));
+        }
+      });
+    }
+
+    
+
+    const healthBtn = document.getElementById('healthBtn');
+    if (healthBtn) {
+      healthBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const url = 'http://localhost:3001/api/v1/health';
+        try {
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), 2000);
+          try {
+            const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal });
+            if (!res.ok) throw new Error('status ' + res.status);
+            const w = window.open(url, '_blank');
+            if (!w) alert('Unable to open health URL');
+          } finally { clearTimeout(id); }
+        } catch (err) {
+          alert('Health endpoint not reachable: ' + String(err));
+        }
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => { logEl.textContent = ''; });
+    }
+
+    // Subscribe to server logs (if preload exposed the API)
+    if (window.electronAPI && window.electronAPI.onServerLog) {
+      const unsub = window.electronAPI.onServerLog((msg) => {
+        try {
+          const t = new Date().toISOString().substr(11, 8);
+          // simple colorizing rules
+          const lower = (msg || '').toLowerCase();
+          let cls = 'info';
+          if (lower.includes('[err]') || lower.includes('error') || lower.includes('exception') || lower.includes('[fatal]')) cls = 'err';
+          else if (lower.includes('warn') || lower.includes('[warn]')) cls = 'warn';
+          // escape HTML
+          const esc = (s) => s.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+          const line = `[${t}] ${esc(msg)}`;
+          // append with color hints
+          if (cls === 'err') logEl.innerHTML += `<span style="color:#ff6b6b">${line}</span>\n`;
+          else if (cls === 'warn') logEl.innerHTML += `<span style="color:#ffb86b">${line}</span>\n`;
+          else logEl.innerHTML += `<span style="color:#9be15d">${line}</span>\n`;
+          logEl.scrollTop = logEl.scrollHeight;
+        } catch (e) { try { logEl.textContent += '\n' + msg; } catch {} }
+      });
+      window.addEventListener('beforeunload', () => { if (typeof unsub === 'function') unsub(); });
+    }
+  </script>
+</body>
+</html>

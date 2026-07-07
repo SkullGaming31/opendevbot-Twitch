@@ -13,7 +13,8 @@
     /* Types and tooling */
     "types": [
       "node",
-      "vitest/globals"
+      "vitest/globals",
+      "electron"
     ],
     /* Emit and source maps */
     "sourceMap": true,

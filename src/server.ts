@@ -51,6 +51,21 @@ app.get(`${API_PREFIX}/metrics`, async (_req, res) => {
   }
 });
 
+// Health endpoint for external monitors (electron UI will poll this)
+app.get(`${API_PREFIX}/health`, async (_req, res) => {
+  try {
+    const uptime = process.uptime();
+    res.json({
+      status: 'ok',
+      pid: process.pid,
+      uptime,
+      time: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: String(err) });
+  }
+});
+
 // Redirect-based route: sends the developer to Twitch's authorize page
 app.get(`${API_PREFIX}/twitch/bot`, (req, res) => {
   const clientId = process.env.TWITCH_CLIENT_ID ?? process.env.CLIENT_ID ?? '';
